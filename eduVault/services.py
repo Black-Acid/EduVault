@@ -11,7 +11,7 @@ from fastapi import HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from models import StudentProfile, TeacherProfile, User
+from eduVault.models import StudentProfile, TeacherProfile, User
 
 JWT_SECRET = "eduvault-secret-key"
 JWT_ALGORITHM = "HS256"

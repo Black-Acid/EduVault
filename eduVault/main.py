@@ -3,8 +3,8 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, status
 from sqlalchemy.orm import Session
 
-from database import check_db_connection, get_db
-from services import AuthResponse, AuthService, LoginRequest, SignupRequest
+from eduVault.database import check_db_connection, get_db
+from eduVault.services import AuthResponse, AuthService, LoginRequest, SignupRequest
 
 
 @asynccontextmanager

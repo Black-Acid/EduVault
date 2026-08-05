@@ -1,3 +1,4 @@
 acid/
 __pycache__/
 .env
+scripts.py

@@ -8,37 +8,18 @@ from typing import Any
 
 import jwt
 from fastapi import HTTPException, status
-from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from eduVault.models import StudentProfile, TeacherProfile, User
+import eduVault.schema as sma
+import eduVault.models as mo
 
 JWT_SECRET = "eduvault-secret-key"
 JWT_ALGORITHM = "HS256"
 JWT_TTL_SECONDS = 2 * 60 * 60
 
 
-class SignupRequest(BaseModel):
-    name: str = Field(..., min_length=1)
-    email: str = Field(..., min_length=3)
-    password: str = Field(..., min_length=6)
-    role: str = Field(default="student")
 
-
-class LoginRequest(BaseModel):
-    email: str = Field(..., min_length=3)
-    password: str = Field(..., min_length=6)
-
-
-class AuthResponse(BaseModel):
-    id: int
-    name: str
-    email: str
-    role: str
-    message: str
-    access_token: str
-    token_type: str = "bearer"
-    expires_at: str
 
 
 def _hash_password(password: str) -> str:
@@ -77,7 +58,7 @@ def _create_access_token(user_id: int, role: str) -> tuple[str, str]:
 
 class AuthService:
     @staticmethod
-    def signup(db: Session, payload: SignupRequest) -> AuthResponse:
+    def signup(db: Session, payload: sma.SignupRequest) -> sma.AuthResponse:
         normalized_name = payload.name.strip()
         normalized_email = payload.email.strip().lower()
         normalized_role = payload.role.strip().lower() or "student"
@@ -104,7 +85,7 @@ class AuthService:
         db.refresh(user)
 
         token, expires_at = _create_access_token(user.id, user.role)
-        return AuthResponse(
+        return sma.AuthResponse(
             id=user.id,
             name=user.name,
             email=user.email,
@@ -115,7 +96,7 @@ class AuthService:
         )
 
     @staticmethod
-    def login(db: Session, payload: LoginRequest) -> AuthResponse:
+    def login(db: Session, payload: sma.LoginRequest) -> sma.AuthResponse:
         normalized_email = payload.email.strip().lower()
         user = db.query(User).filter(User.email == normalized_email).first()
 
@@ -123,7 +104,7 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
         token, expires_at = _create_access_token(user.id, user.role)
-        return AuthResponse(
+        return sma.AuthResponse(
             id=user.id,
             name=user.name,
             email=user.email,
@@ -132,3 +113,149 @@ class AuthService:
             access_token=token,
             expires_at=expires_at,
         )
+
+
+
+def get_subject(db: Session, subject_name: str) -> mo.Subject:
+
+    subject = (
+        db.query(mo.Subject)
+        .filter(mo.Subject.name == subject_name)
+        .first()
+    )
+
+    if not subject:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subject not found."
+        )
+
+    return subject
+
+def get_available_subjects(db: Session):
+
+    subjects = db.query(mo.Subject).all()
+
+    response = []
+
+    for subject in subjects:
+
+        response.append(
+            {
+                "id": subject.id,
+                "name": subject.name,
+                "papers": [
+                    {
+                        "id": paper.id,
+                        "year": paper.year,
+                        "paper_number": paper.paper_number
+                    }
+                    for paper in subject.papers
+                ]
+            }
+        )
+
+    return response
+
+
+def get_paper(
+    db: Session,
+    subject_id: int,
+    year: int,
+    paper_number: str
+) -> mo.Paper:
+
+    paper = (
+        db.query(mo.Paper)
+        .filter(
+            mo.Paper.subject_id == subject_id,
+            mo.Paper.year == year,
+            mo.Paper.paper_number == paper_number
+        )
+        .first()
+    )
+
+    if not paper:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Paper not found."
+        )
+
+    return paper
+
+
+def get_questions(
+    db: Session,
+    paper_id: int
+) -> list[mo.Question]:
+
+    questions = (
+        db.query(mo.Question)
+        .filter(
+            mo.Question.paper_id == paper_id
+        )
+        .all()
+    )
+
+    if not questions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No questions found."
+        )
+
+    return questions
+
+
+def build_question_response(
+    questions: list[mo.Question]
+) -> list[sma.QuestionResponse]:
+
+    response = []
+
+    for question in questions:
+
+        response.append(
+            sma.QuestionResponse(
+                id=question.id,
+                question_number=question.question_number,
+                question=question.question_text,
+                options=[
+                    sma.OptionResponse(
+                        id=option.id,
+                        label=option.label,
+                        text=option.option_text
+                    )
+                    for option in question.options
+                ]
+            )
+        )
+
+    return response
+
+
+
+def fetch_questions(
+    db: Session,
+    payload: sma.FetchQuestionsRequest
+):
+
+    subject = get_subject(
+        db,
+        payload.subject
+    )
+
+    paper = get_paper(
+        db,
+        subject.id,
+        payload.year,
+        payload.paper_number
+    )
+
+    questions = get_questions(
+        db,
+        paper.id
+    )
+
+    return build_question_response(
+        questions
+    )

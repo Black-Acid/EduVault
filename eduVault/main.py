@@ -5,8 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from eduVault.database import check_db_connection, get_db
-from eduVault.services import AuthResponse, AuthService, LoginRequest, SignupRequest
-
+from eduVault.schema import AuthResponse, LoginRequest, SignupRequest
+import eduVault.services as sv
+import eduVault.schema as sma
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -32,9 +33,28 @@ async def health_check() -> dict[str, str]:
 
 @app.post("/auth/signup", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    return AuthService.signup(db, payload)
+    return sv.AuthService.signup(db, payload)
 
 
 @app.post("/auth/login", response_model=AuthResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
-    return AuthService.login(db, payload)
+    return sv.AuthService.login(db, payload)
+
+#task for today 
+# Build the endpoint for the dashboard for both students and tutors
+# build the endpoint for the zoom class 
+# Gather the questions and have it saved in the database 
+# Setup redis to keep the questions so we have our database free from hits all the time
+@app.get("/subjects")
+def subjects(db: Session = Depends(get_db)):
+    return sv.get_available_subjects(db)
+
+@app.post("/questions")
+def get_questions(
+    payload: sma.FetchQuestionsRequest,
+    db: Session = Depends(get_db)
+):
+    return sv.fetch_questions(
+        db=db,
+        payload=payload
+    )

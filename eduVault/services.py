@@ -259,3 +259,81 @@ def fetch_questions(
     return build_question_response(
         questions
     )
+    
+    
+def submit_paper(
+    db: Session,
+    payload: sma.SubmitPaperRequest
+) -> sma.SubmitPaperResponse:
+
+    paper = (
+        db.query(mo.Paper)
+        .filter(mo.Paper.id == payload.paper_id)
+        .first()
+    )
+
+    if not paper:
+        raise HTTPException(
+            status_code=404,
+            detail="Paper not found."
+        )
+
+    score = 0
+
+    wrong_questions = []
+
+    for answer in payload.answers:
+
+        question = (
+            db.query(mo.Question)
+            .filter(
+                mo.Question.id == answer.question_id,
+                mo.Question.paper_id == payload.paper_id
+            )
+            .first()
+        )
+
+        if not question:
+            continue
+
+        correct_option = (
+            db.query(mo.QuestionOption)
+            .filter(
+                mo.QuestionOption.question_id == question.id,
+                mo.QuestionOption.is_correct == True
+            )
+            .first()
+        )
+
+        if not correct_option:
+            continue
+
+        if correct_option.id == answer.selected_option_id:
+            score += 1
+
+        else:
+
+            wrong_questions.append(
+                sma.WrongQuestionResponse(
+                    question_id=question.id,
+                    selected_option_id=answer.selected_option_id,
+                    correct_option_id=correct_option.id
+                )
+            )
+
+    total_questions = len(payload.answers)
+
+    percentage = (
+        (score / total_questions) * 100
+        if total_questions
+        else 0
+    )
+
+    return sma.SubmitPaperResponse(
+        score=score,
+        total_questions=total_questions,
+        percentage=percentage,
+        correct=score,
+        wrong=total_questions - score,
+        wrong_questions=wrong_questions
+    )

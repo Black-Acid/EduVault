@@ -58,3 +58,17 @@ def get_questions(
         db=db,
         payload=payload
     )
+    
+
+@app.post(
+    "/papers/submit",
+    response_model=sma.SubmitPaperResponse
+)
+def submit_questions(
+    payload: sma.SubmitPaperRequest,
+    db: Session = Depends(get_db)
+):
+    return sv.submit_paper(
+        db=db,
+        payload=payload
+    )

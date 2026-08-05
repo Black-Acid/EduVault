@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 
@@ -41,3 +41,47 @@ class QuestionResponse(BaseModel):
     question_number: int
     question: str
     options: list[OptionResponse]
+    
+class AnswerSubmission(BaseModel):
+    question_id: int
+    selected_option_id: int
+
+
+class SubmitPaperRequest(BaseModel):
+    paper_id: int
+    answers: list[AnswerSubmission]
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "paper_id": 1,
+                "answers": [
+                    {
+                        "question_id": 1,
+                        "selected_option_id": 2
+                    },
+                    {
+                        "question_id": 2,
+                        "selected_option_id": 7
+                    },
+                    {
+                        "question_id": 3,
+                        "selected_option_id": 12
+                    }
+                ]
+            }
+        }
+    )
+    
+class WrongQuestionResponse(BaseModel):
+    question_id: int
+    selected_option_id: int
+    correct_option_id: int
+
+
+class SubmitPaperResponse(BaseModel):
+    score: int
+    total_questions: int
+    percentage: float
+    correct: int
+    wrong: int
+    wrong_questions: list[WrongQuestionResponse]

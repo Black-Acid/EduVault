@@ -48,6 +48,18 @@ class User(Base):
         cascade="all, delete-orphan",
     )
     
+    quiz_attempts: Mapped[list["QuizAttempt"]] = relationship(
+        "QuizAttempt",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    student_answers: Mapped[list["StudentAnswer"]] = relationship(
+        "StudentAnswer",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email={self.email!r}, name={self.name!r})>"
@@ -179,6 +191,12 @@ class Paper(Base):
         back_populates="paper",
         cascade="all, delete-orphan"
     )
+    
+    quiz_attempts: Mapped[list["QuizAttempt"]] = relationship(
+        "QuizAttempt",
+        back_populates="paper",
+        cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         return f"<Paper(id={self.id}, year={self.year}, paper={self.paper_number})>"
@@ -224,6 +242,11 @@ class Question(Base):
         back_populates="question",
         cascade="all, delete-orphan"
     )
+    
+    student_answers: Mapped[list["StudentAnswer"]] = relationship(
+        "StudentAnswer",
+        back_populates="question"
+    )
 
     def __repr__(self) -> str:
         return f"<Question(id={self.id}, number={self.question_number})>"
@@ -266,419 +289,133 @@ class QuestionOption(Base):
 
     def __repr__(self) -> str:
         return f"<QuestionOption(id={self.id}, label={self.label})>"
+    
+    student_answers: Mapped[list["StudentAnswer"]] = relationship(
+        "StudentAnswer",
+        back_populates="selected_option"
+    )
 
+class QuizAttempt(Base):
+    __tablename__ = "Quiz_Attempts"
 
-# class Subject(Base):
-#     __tablename__ = "Subjects"
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True
+    )
 
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     teacher_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     title: Mapped[str] = mapped_column(String(255), nullable=False)
-#     description: Mapped[Optional[str]] = mapped_column(Text)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("Users.id"),
+        nullable=False,
+        index=True
+    )
 
-#     teacher: Mapped["User"] = relationship("User", back_populates="subjects_taught")
-#     levels: Mapped[list["Level"]] = relationship(
-#         "Level",
-#         back_populates="subject",
-#         cascade="all, delete-orphan",
-#     )
-#     quizzes: Mapped[list["Quiz"]] = relationship(
-#         "Quiz",
-#         back_populates="subject",
-#         cascade="all, delete-orphan",
-#     )
-#     progress_tracking: Mapped[list["ProgressTracking"]] = relationship(
-#         "ProgressTracking",
-#         back_populates="subject",
-#         cascade="all, delete-orphan",
-#     )
-#     bookings: Mapped[list["Booking"]] = relationship(
-#         "Booking",
-#         back_populates="subject",
-#         cascade="all, delete-orphan",
-#     )
+    paper_id: Mapped[int] = mapped_column(
+        ForeignKey("Papers.id"),
+        nullable=False,
+        index=True
+    )
 
-#     def __repr__(self) -> str:
-#         return f"<Subject(id={self.id}, title={self.title!r})>"
+    total_questions: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False
+    )
 
+    correct_answers: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False
+    )
 
-# class Level(Base):
-#     __tablename__ = "Levels"
+    score: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False
+    )
 
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     subject_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Subjects.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     name: Mapped[str] = mapped_column(String(100), nullable=False)
-#     description: Mapped[Optional[str]] = mapped_column(Text)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
+    percentage: Mapped[float] = mapped_column(
+        nullable=False
+    )
 
-#     subject: Mapped["Subject"] = relationship("Subject", back_populates="levels")
-#     quizzes: Mapped[list["Quiz"]] = relationship(
-#         "Quiz",
-#         back_populates="level",
-#         cascade="all, delete-orphan",
-#     )
-#     progress_tracking: Mapped[list["ProgressTracking"]] = relationship(
-#         "ProgressTracking",
-#         back_populates="level",
-#         cascade="all, delete-orphan",
-#     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now()
+    )
 
-#     def __repr__(self) -> str:
-#         return f"<Level(id={self.id}, name={self.name!r})>"
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="quiz_attempts"
+    )
 
+    paper: Mapped["Paper"] = relationship(
+        "Paper",
+        back_populates="quiz_attempts"
+    )
 
-# class Quiz(Base):
-#     __tablename__ = "Quizzes"
+    answers: Mapped[list["StudentAnswer"]] = relationship(
+        "StudentAnswer",
+        back_populates="attempt",
+        cascade="all, delete-orphan"
+    )
 
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     subject_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Subjects.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     level_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Levels.id"), index=True)
-#     creator_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     title: Mapped[str] = mapped_column(String(255), nullable=False)
-#     description: Mapped[Optional[str]] = mapped_column(Text)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
+    def __repr__(self) -> str:
+        return f"<QuizAttempt(id={self.id}, user_id={self.user_id}, paper_id={self.paper_id})>"
+    
+    
+class StudentAnswer(Base):
+    __tablename__ = "Student_Answers"
 
-#     subject: Mapped["Subject"] = relationship("Subject", back_populates="quizzes")
-#     level: Mapped[Optional["Level"]] = relationship("Level", back_populates="quizzes")
-#     creator: Mapped["User"] = relationship("User", back_populates="quizzes")
-#     questions: Mapped[list["Question"]] = relationship(
-#         "Question",
-#         back_populates="quiz",
-#         cascade="all, delete-orphan",
-#     )
-#     quiz_attempts: Mapped[list["QuizAttempt"]] = relationship(
-#         "QuizAttempt",
-#         back_populates="quiz",
-#         cascade="all, delete-orphan",
-#     )
-#     ai_explanations: Mapped[list["AIExplanation"]] = relationship(
-#         "AIExplanation",
-#         back_populates="quiz",
-#         cascade="all, delete-orphan",
-#     )
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True
+    )
 
-#     def __repr__(self) -> str:
-#         return f"<Quiz(id={self.id}, title={self.title!r})>"
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("Users.id"),
+        nullable=False,
+        index=True
+    )
 
+    attempt_id: Mapped[int] = mapped_column(
+        ForeignKey("Quiz_Attempts.id"),
+        nullable=False,
+        index=True
+    )
 
-# class Question(Base):
-#     __tablename__ = "Questions"
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("Questions.id"),
+        nullable=False,
+        index=True
+    )
 
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     quiz_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Quizzes.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     question_text: Mapped[str] = mapped_column(Text, nullable=False)
-#     options: Mapped[Optional[str]] = mapped_column(Text)
-#     correct_answer: Mapped[str] = mapped_column(Text, nullable=False)
-#     explanation: Mapped[Optional[str]] = mapped_column(Text)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
+    selected_option_id: Mapped[int] = mapped_column(
+        ForeignKey("Question_Options.id"),
+        nullable=False
+    )
 
-#     quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="questions")
-#     student_answers: Mapped[list["StudentAnswer"]] = relationship(
-#         "StudentAnswer",
-#         back_populates="question",
-#         cascade="all, delete-orphan",
-#     )
-#     ai_explanations: Mapped[list["AIExplanation"]] = relationship(
-#         "AIExplanation",
-#         back_populates="question",
-#         cascade="all, delete-orphan",
-#     )
+    is_correct: Mapped[bool] = mapped_column(
+        nullable=False
+    )
 
-#     def __repr__(self) -> str:
-#         return f"<Question(id={self.id}, quiz_id={self.quiz_id})>"
+    user: Mapped["User"] = relationship(
+        "User",
+        back_populates="student_answers"
+    )
 
+    attempt: Mapped["QuizAttempt"] = relationship(
+        "QuizAttempt",
+        back_populates="answers"
+    )
 
-# class QuizAttempt(Base):
-#     __tablename__ = "Quiz_Attempts"
+    question: Mapped["Question"] = relationship(
+        "Question",
+        back_populates="student_answers"
+    )
 
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     user_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     quiz_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Quizzes.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     score: Mapped[Optional[int]] = mapped_column(Integer)
-#     status: Mapped[str] = mapped_column(String(50), nullable=False, default="in_progress")
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
+    selected_option: Mapped["QuestionOption"] = relationship(
+        "QuestionOption",
+        back_populates="student_answers"
+    )
 
-#     user: Mapped["User"] = relationship("User", back_populates="quiz_attempts")
-#     quiz: Mapped["Quiz"] = relationship("Quiz", back_populates="quiz_attempts")
-#     student_answers: Mapped[list["StudentAnswer"]] = relationship(
-#         "StudentAnswer",
-#         back_populates="quiz_attempt",
-#         cascade="all, delete-orphan",
-#     )
-
-#     def __repr__(self) -> str:
-#         return f"<QuizAttempt(id={self.id}, quiz_id={self.quiz_id}, user_id={self.user_id})>"
-
-
-# class StudentAnswer(Base):
-#     __tablename__ = "Student_Answers"
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     quiz_attempt_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Quiz_Attempts.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     question_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Questions.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     user_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     answer_text: Mapped[str] = mapped_column(Text, nullable=False)
-#     is_correct: Mapped[bool] = mapped_column(Integer, default=0, nullable=False)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
-
-#     quiz_attempt: Mapped["QuizAttempt"] = relationship("QuizAttempt", back_populates="student_answers")
-#     question: Mapped["Question"] = relationship("Question", back_populates="student_answers")
-#     user: Mapped["User"] = relationship("User", back_populates="student_answers")
-
-#     def __repr__(self) -> str:
-#         return f"<StudentAnswer(id={self.id}, question_id={self.question_id})>"
-
-
-# class ProgressTracking(Base):
-#     __tablename__ = "Progress_Tracking"
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     user_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     subject_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Subjects.id"), index=True)
-#     level_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Levels.id"), index=True)
-#     completed_lessons: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-#     completion_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
-
-#     user: Mapped["User"] = relationship("User", back_populates="progress_tracking")
-#     subject: Mapped[Optional["Subject"]] = relationship("Subject", back_populates="progress_tracking")
-#     level: Mapped[Optional["Level"]] = relationship("Level", back_populates="progress_tracking")
-
-#     def __repr__(self) -> str:
-#         return f"<ProgressTracking(id={self.id}, user_id={self.user_id})>"
-
-
-# class AIExplanation(Base):
-#     __tablename__ = "AI_Explanations"
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     quiz_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Quizzes.id"), index=True)
-#     question_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Questions.id"), index=True)
-#     user_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     explanation_text: Mapped[str] = mapped_column(Text, nullable=False)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
-
-#     quiz: Mapped[Optional["Quiz"]] = relationship("Quiz", back_populates="ai_explanations")
-#     question: Mapped[Optional["Question"]] = relationship("Question", back_populates="ai_explanations")
-#     user: Mapped["User"] = relationship("User", back_populates="ai_explanations")
-
-#     def __repr__(self) -> str:
-#         return f"<AIExplanation(id={self.id}, user_id={self.user_id})>"
-
-
-# class Booking(Base):
-#     __tablename__ = "Bookings"
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     student_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     teacher_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     subject_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Subjects.id"), index=True)
-#     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-#     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
-
-#     student: Mapped["User"] = relationship(
-#         "User",
-#         foreign_keys="[Booking.student_id]",
-#         back_populates="bookings_as_student",
-#     )
-#     teacher: Mapped["User"] = relationship(
-#         "User",
-#         foreign_keys="[Booking.teacher_id]",
-#         back_populates="bookings_as_teacher",
-#     )
-#     subject: Mapped[Optional["Subject"]] = relationship("Subject", back_populates="bookings")
-#     tutoring_session: Mapped[Optional["TutoringSession"]] = relationship(
-#         "TutoringSession",
-#         back_populates="booking",
-#         uselist=False,
-#         cascade="all, delete-orphan",
-#     )
-
-#     def __repr__(self) -> str:
-#         return f"<Booking(id={self.id}, student_id={self.student_id}, teacher_id={self.teacher_id})>"
-
-
-# class TeacherAvailability(Base):
-#     __tablename__ = "Teacher_Availability"
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     teacher_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     day_of_week: Mapped[str] = mapped_column(String(50), nullable=False)
-#     start_time: Mapped[str] = mapped_column(String(10), nullable=False)
-#     end_time: Mapped[str] = mapped_column(String(10), nullable=False)
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
-
-#     teacher: Mapped["User"] = relationship("User", back_populates="availability")
-
-#     def __repr__(self) -> str:
-#         return f"<TeacherAvailability(id={self.id}, teacher_id={self.teacher_id})>"
-
-
-# class TutoringSession(Base):
-#     __tablename__ = "Tutoring_Sessions"
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     booking_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("Bookings.id"), index=True)
-#     student_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     teacher_id: Mapped[int] = mapped_column(
-#         Integer,
-#         ForeignKey("Users.id"),
-#         nullable=False,
-#         index=True,
-#     )
-#     started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-#     ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-#     status: Mapped[str] = mapped_column(String(50), nullable=False, default="scheduled")
-#     created_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now()
-#     )
-#     updated_at: Mapped[datetime] = mapped_column(
-#         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
-#     )
-
-#     booking: Mapped[Optional["Booking"]] = relationship("Booking", back_populates="tutoring_session")
-#     student: Mapped["User"] = relationship(
-#         "User",
-#         foreign_keys="[TutoringSession.student_id]",
-#         back_populates="tutoring_sessions_as_student",
-#     )
-#     teacher: Mapped["User"] = relationship(
-#         "User",
-#         foreign_keys="[TutoringSession.teacher_id]",
-#         back_populates="tutoring_sessions_as_teacher",
-#     )
-
-#     def __repr__(self) -> str:
-#         return f"<TutoringSession(id={self.id}, status={self.status!r})>"
+    def __repr__(self) -> str:
+        return f"<StudentAnswer(id={self.id}, question_id={self.question_id}, is_correct={self.is_correct})>"

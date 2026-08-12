@@ -74,14 +74,22 @@ class SubmitPaperRequest(BaseModel):
     
 class WrongQuestionResponse(BaseModel):
     question_id: int
-    selected_option_id: int
-    correct_option_id: int
+    # selected_option_id: int
+    # correct_option_id: int
 
 
 class SubmitPaperResponse(BaseModel):
+    attempt_id: int
     score: int
     total_questions: int
     percentage: float
     correct: int
     wrong: int
     wrong_questions: list[WrongQuestionResponse]
+    
+class ExplainWrongAnswerRequest(BaseModel):
+    attempt_id: int
+    question_id: int
+    
+class ExplainWrongAnswerResponse(BaseModel):
+    explanation: str

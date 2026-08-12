@@ -40,6 +40,27 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> AuthRespons
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     return sv.AuthService.login(db, payload)
 
+
+@app.post(
+    "/ai/explain",
+    response_model=sma.ExplainWrongAnswerResponse
+)
+def explain_wrong_answer(
+    payload: sma.ExplainWrongAnswerRequest,
+    db: Session = Depends(get_db),
+    current_user= Depends(sv.get_current_user)
+):
+    explanation = sv.explain_wrong_answer(
+        db=db,
+        attempt_id=payload.attempt_id,
+        question_id=payload.question_id,
+        user=current_user
+    )
+
+    return sma.ExplainWrongAnswerResponse(
+        explanation=explanation
+    )
+
 #task for today 
 # Build the endpoint for the dashboard for both students and tutors
 # build the endpoint for the zoom class 
@@ -66,9 +87,11 @@ def get_questions(
 )
 def submit_questions(
     payload: sma.SubmitPaperRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(sv.get_current_user)
 ):
     return sv.submit_paper(
         db=db,
-        payload=payload
+        payload=payload,
+        user=current_user
     )

@@ -7,19 +7,74 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from eduVault.models import StudentProfile, TeacherProfile, User
 import eduVault.schema as sma
 import eduVault.models as mo
+from dotenv import load_dotenv
+import os
+from google import genai
+from eduVault.database import get_db
+
+load_dotenv()
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if not GEMINI_API_KEY:
+    raise RuntimeError("GEMINI_API_KEY is not configured")
+
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 JWT_SECRET = "eduvault-secret-key"
 JWT_ALGORITHM = "HS256"
 JWT_TTL_SECONDS = 2 * 60 * 60
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+) -> User:
 
+    try:
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM]
+        )
+
+        user_id = payload.get("sub")
+
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token"
+            )
+
+        user_id = int(user_id)
+
+    except (jwt.InvalidTokenError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token"
+        )
+
+    user = (
+        db.query(User)
+        .filter(User.id == user_id)
+        .first()
+    )
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+
+    return user
 
 
 def _hash_password(password: str) -> str:
@@ -263,9 +318,11 @@ def fetch_questions(
     
 def submit_paper(
     db: Session,
-    payload: sma.SubmitPaperRequest
+    payload: sma.SubmitPaperRequest,
+    user: mo.User
 ) -> sma.SubmitPaperResponse:
 
+    # Get the paper
     paper = (
         db.query(mo.Paper)
         .filter(mo.Paper.id == payload.paper_id)
@@ -278,17 +335,45 @@ def submit_paper(
             detail="Paper not found."
         )
 
-    score = 0
+    # Get all questions belonging to this paper
+    questions = (
+        db.query(mo.Question)
+        .filter(mo.Question.paper_id == paper.id)
+        .all()
+    )
 
+    if not questions:
+        raise HTTPException(
+            status_code=404,
+            detail="This paper has no questions."
+        )
+
+    total_questions = len(questions)
+
+    # Create an attempt for this specific user
+    attempt = mo.QuizAttempt(
+        user_id=user.id,
+        paper_id=paper.id,
+        total_questions=total_questions,
+        correct_answers=0,
+        score=0,
+        percentage=0
+    )
+
+    db.add(attempt)
+    db.flush()
+
+    score = 0
     wrong_questions = []
 
+    # Mark the submitted answers
     for answer in payload.answers:
 
         question = (
             db.query(mo.Question)
             .filter(
                 mo.Question.id == answer.question_id,
-                mo.Question.paper_id == payload.paper_id
+                mo.Question.paper_id == paper.id
             )
             .first()
         )
@@ -300,7 +385,7 @@ def submit_paper(
             db.query(mo.QuestionOption)
             .filter(
                 mo.QuestionOption.question_id == question.id,
-                mo.QuestionOption.is_correct == True
+                mo.QuestionOption.is_correct.is_(True)
             )
             .first()
         )
@@ -308,28 +393,49 @@ def submit_paper(
         if not correct_option:
             continue
 
-        if correct_option.id == answer.selected_option_id:
+        is_correct = (
+            answer.selected_option_id == correct_option.id
+        )
+
+        if is_correct:
             score += 1
-
         else:
-
             wrong_questions.append(
                 sma.WrongQuestionResponse(
                     question_id=question.id,
-                    selected_option_id=answer.selected_option_id,
-                    correct_option_id=correct_option.id
+                    # selected_option_id=answer.selected_option_id,
+                    # correct_option_id=correct_option.id
                 )
             )
 
-    total_questions = len(payload.answers)
+        # Save the student's answer
+        student_answer = mo.StudentAnswer(
+            user_id=user.id,
+            attempt_id=attempt.id,
+            question_id=question.id,
+            selected_option_id=answer.selected_option_id,
+            is_correct=is_correct
+        )
 
+        db.add(student_answer)
+
+    # Calculate result based on the actual paper
     percentage = (
         (score / total_questions) * 100
-        if total_questions
+        if total_questions > 0
         else 0
     )
 
+    # Update the attempt
+    attempt.correct_answers = score
+    attempt.score = score
+    attempt.percentage = percentage
+
+    db.commit()
+    db.refresh(attempt)
+
     return sma.SubmitPaperResponse(
+        attempt_id=attempt.id,
         score=score,
         total_questions=total_questions,
         percentage=percentage,
@@ -337,3 +443,172 @@ def submit_paper(
         wrong=total_questions - score,
         wrong_questions=wrong_questions
     )
+    
+    
+def explain_wrong_answer(
+    db: Session,
+    attempt_id: int,
+    question_id: int,
+    user: mo.User
+) -> str:
+
+    # Get the quiz attempt belonging to the logged-in user
+    attempt = (
+        db.query(mo.QuizAttempt)
+        .filter(
+            mo.QuizAttempt.id == attempt_id,
+            mo.QuizAttempt.user_id == user.id
+        )
+        .first()
+    )
+
+    if not attempt:
+        raise HTTPException(
+            status_code=404,
+            detail="Quiz attempt not found."
+        )
+
+    # Get the student's answer for this question
+    # within this specific quiz attempt
+    student_answer = (
+        db.query(mo.StudentAnswer)
+        .filter(
+            mo.StudentAnswer.attempt_id == attempt.id,
+            mo.StudentAnswer.user_id == user.id,
+            mo.StudentAnswer.question_id == question_id
+        )
+        .first()
+    )
+
+    if not student_answer:
+        raise HTTPException(
+            status_code=404,
+            detail="Answer not found for this question in this quiz attempt."
+        )
+
+    # Make sure the student actually got the question wrong
+    if student_answer.is_correct:
+        raise HTTPException(
+            status_code=400,
+            detail="This question was answered correctly."
+        )
+
+    # Get the question
+    question = (
+        db.query(mo.Question)
+        .filter(
+            mo.Question.id == question_id,
+            mo.Question.paper_id == attempt.paper_id
+        )
+        .first()
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="Question not found in this quiz attempt."
+        )
+
+    # Get the option selected by the student
+    selected_option = (
+        db.query(mo.QuestionOption)
+        .filter(
+            mo.QuestionOption.id == student_answer.selected_option_id,
+            mo.QuestionOption.question_id == question.id
+        )
+        .first()
+    )
+
+    if not selected_option:
+        raise HTTPException(
+            status_code=404,
+            detail="Selected option not found."
+        )
+
+    # Get the correct option
+    correct_option = (
+        db.query(mo.QuestionOption)
+        .filter(
+            mo.QuestionOption.question_id == question.id,
+            mo.QuestionOption.is_correct.is_(True)
+        )
+        .first()
+    )
+
+    if not correct_option:
+        raise HTTPException(
+            status_code=404,
+            detail="Correct option not found."
+        )
+
+    # Get all options for the question
+    options = (
+        db.query(mo.QuestionOption)
+        .filter(
+            mo.QuestionOption.question_id == question.id
+        )
+        .all()
+    )
+
+    options_text = "\n".join(
+        f"{option.label}. {option.option_text}"
+        for option in options
+    )
+
+    # Build the prompt for Gemini
+    prompt = f"""
+        You are an educational tutor helping a WASSCE student understand
+        a question they answered incorrectly.
+
+        Question:
+        {question.question_text}
+
+        Options:
+        {options_text}
+
+        Student's selected answer:
+        {selected_option.label}. {selected_option.option_text}
+
+        Correct answer:
+        {correct_option.label}. {correct_option.option_text}
+
+        Your job is to teach the student, not simply give them the answer.
+
+        Requirements:
+        - Clearly explain why the correct answer is correct.
+        - Explain why the student's selected answer is incorrect.
+        - Teach the underlying concept behind the question.
+        - If calculations are involved, show the calculation step by step.
+        - Use language appropriate for a senior high school student.
+        - Be clear, patient, and encouraging.
+        - Do not assume the student already understands the concept.
+        - Do not be unnecessarily verbose.
+        - Do not simply repeat the answer.
+    """
+
+    # Send the question to Gemini
+    response = gemini_client.interactions.create(
+        model="gemini-3.5-flash",
+        input=prompt
+    )
+
+    return response.output_text
+
+# if __name__ == "__main__":
+#     explanation = explain_question(
+#         question=(
+#             "An electric bulb is rated 120 W and 240 V. "
+#             "Determine the current it draws from the mains."
+#         ),
+#         options=[
+#             "A. 0.5 A",
+#             "B. 0.6 A",
+#             "C. 1.0 A",
+#             "D. 2.0 A"
+#         ],
+#         student_answer="B. 0.6 A",
+#         correct_answer="A. 0.5 A"
+#     )
+
+#     print("\n--- GEMINI EXPLANATION ---\n")
+#     print(explanation)

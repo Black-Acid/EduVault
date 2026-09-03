@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-
+from datetime import date, datetime
 
 
 class SignupRequest(BaseModel):
@@ -91,5 +91,89 @@ class ExplainWrongAnswerRequest(BaseModel):
     attempt_id: int
     question_id: int
     
-class ExplainWrongAnswerResponse(BaseModel):
-    explanation: str
+# class ExplainWrongAnswerResponse(BaseModel):
+#     explanation: str
+
+class AnswerInfo(BaseModel):
+    label: str
+    text: str
+    
+    
+class AIWrongAnswerExplanation(BaseModel):
+    topic: str
+    concept: str
+    why_student_answer_is_wrong: str
+    why_correct_answer_is_right: str
+    solution: str
+    key_takeaway: str
+ 
+class WrongAnswerExplanation(BaseModel):
+    question_id: int
+    question_text: str
+
+    student_answer: AnswerInfo
+    correct_answer: AnswerInfo
+
+    topic: str
+
+    concept: str
+    why_student_answer_is_wrong: str
+    why_correct_answer_is_right: str
+    solution: str
+    key_takeaway: str   
+
+class DashboardUser(BaseModel):
+    name: str
+
+
+class DashboardOverview(BaseModel):
+    current_streak: int
+    average_score: float
+    accuracy: float
+    total_questions_solved: int
+    total_duration_minutes: int
+
+
+
+class StrongestTopic(BaseModel):
+    topic_name: str
+    mastery_percentage: float
+    
+
+class SubjectMastery(BaseModel):
+    subject_name: str
+    mastery_percentage: float
+    strongest_topic: StrongestTopic | None
+
+
+class SubjectImprovement(BaseModel):
+    subject_name: str
+    mastery_percentage: float
+
+
+class UnfinishedQuiz(BaseModel):
+    quiz_id: int
+    title: str
+    total_questions: int
+    answered_questions: int
+    remaining_questions: int
+    progress_percentage: float
+    duration_spent_minutes: int
+    last_activity_at: datetime
+
+class ActivityDay(BaseModel):
+    date: date
+    quiz_count: int
+    
+class MonthlyActivity(BaseModel):
+    year: int
+    month: int
+    days: list[ActivityDay]
+
+class UserDashboardResponse(BaseModel):
+    user: DashboardUser
+    overview: DashboardOverview
+    subject_mastery: list[SubjectMastery]
+    areas_to_improve: list[SubjectImprovement]
+    unfinished_quizzes: list[UnfinishedQuiz]
+    monthly_activity: MonthlyActivity

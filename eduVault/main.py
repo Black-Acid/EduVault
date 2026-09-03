@@ -63,8 +63,7 @@ def explain_wrong_answer(
 
 #task for today 
 # Build the endpoint for the dashboard for both students and tutors
-# build the endpoint for the zoom class 
-# Gather the questions and have it saved in the database 
+# build the endpoint for the zoom class  
 # Setup redis to keep the questions so we have our database free from hits all the time
 @app.get("/subjects")
 def subjects(db: Session = Depends(get_db)):
@@ -94,4 +93,18 @@ def submit_questions(
         db=db,
         payload=payload,
         user=current_user
+    )
+    
+@app.get("/dashboard", response_model=sma.UserDashboardResponse)
+def dashboard(
+    user_id: int,
+    year: int,
+    month: int,
+    db: Session = Depends(get_db)
+):
+    return sv.get_dashboard(
+        db=db,
+        user_id=user_id,
+        year=year,
+        month=month
     )

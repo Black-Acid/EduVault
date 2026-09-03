@@ -3,13 +3,15 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timedelta, timezone, date
+from calendar import monthrange
+import json
 
 import jwt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from sqlalchemy import case, func
 
 from eduVault.models import StudentProfile, TeacherProfile, User
 import eduVault.schema as sma
@@ -445,12 +447,161 @@ def submit_paper(
     )
     
     
+# def explain_wrong_answer(
+#     db: Session,
+#     attempt_id: int,
+#     question_id: int,
+#     user: mo.User
+# ) -> str:
+
+#     # Get the quiz attempt belonging to the logged-in user
+#     attempt = (
+#         db.query(mo.QuizAttempt)
+#         .filter(
+#             mo.QuizAttempt.id == attempt_id,
+#             mo.QuizAttempt.user_id == user.id
+#         )
+#         .first()
+#     )
+
+#     if not attempt:
+#         raise HTTPException(
+#             status_code=404,
+#             detail="Quiz attempt not found."
+#         )
+
+#     # Get the student's answer for this question
+#     # within this specific quiz attempt
+#     student_answer = (
+#         db.query(mo.StudentAnswer)
+#         .filter(
+#             mo.StudentAnswer.attempt_id == attempt.id,
+#             mo.StudentAnswer.user_id == user.id,
+#             mo.StudentAnswer.question_id == question_id
+#         )
+#         .first()
+#     )
+
+#     if not student_answer:
+#         raise HTTPException(
+#             status_code=404,
+#             detail="Answer not found for this question in this quiz attempt."
+#         )
+
+#     # Make sure the student actually got the question wrong
+#     if student_answer.is_correct:
+#         raise HTTPException(
+#             status_code=400,
+#             detail="This question was answered correctly."
+#         )
+
+#     # Get the question
+#     question = (
+#         db.query(mo.Question)
+#         .filter(
+#             mo.Question.id == question_id,
+#             mo.Question.paper_id == attempt.paper_id
+#         )
+#         .first()
+#     )
+
+#     if not question:
+#         raise HTTPException(
+#             status_code=404,
+#             detail="Question not found in this quiz attempt."
+#         )
+
+#     # Get the option selected by the student
+#     selected_option = (
+#         db.query(mo.QuestionOption)
+#         .filter(
+#             mo.QuestionOption.id == student_answer.selected_option_id,
+#             mo.QuestionOption.question_id == question.id
+#         )
+#         .first()
+#     )
+
+#     if not selected_option:
+#         raise HTTPException(
+#             status_code=404,
+#             detail="Selected option not found."
+#         )
+
+#     # Get the correct option
+#     correct_option = (
+#         db.query(mo.QuestionOption)
+#         .filter(
+#             mo.QuestionOption.question_id == question.id,
+#             mo.QuestionOption.is_correct.is_(True)
+#         )
+#         .first()
+#     )
+
+#     if not correct_option:
+#         raise HTTPException(
+#             status_code=404,
+#             detail="Correct option not found."
+#         )
+
+#     # Get all options for the question
+#     options = (
+#         db.query(mo.QuestionOption)
+#         .filter(
+#             mo.QuestionOption.question_id == question.id
+#         )
+#         .all()
+#     )
+
+#     options_text = "\n".join(
+#         f"{option.label}. {option.option_text}"
+#         for option in options
+#     )
+
+#     # Build the prompt for Gemini
+#     prompt = f"""
+#         You are an educational tutor helping a WASSCE student understand
+#         a question they answered incorrectly.
+
+#         Question:
+#         {question.question_text}
+
+#         Options:
+#         {options_text}
+
+#         Student's selected answer:
+#         {selected_option.label}. {selected_option.option_text}
+
+#         Correct answer:
+#         {correct_option.label}. {correct_option.option_text}
+
+#         Your job is to teach the student, not simply give them the answer.
+
+#         Requirements:
+#         - Clearly explain why the correct answer is correct.
+#         - Explain why the student's selected answer is incorrect.
+#         - Teach the underlying concept behind the question.
+#         - If calculations are involved, show the calculation step by step.
+#         - Use language appropriate for a senior high school student.
+#         - Be clear, patient, and encouraging.
+#         - Do not assume the student already understands the concept.
+#         - Do not be unnecessarily verbose.
+#         - Do not simply repeat the answer.
+#     """
+
+#     # Send the question to Gemini
+#     response = gemini_client.interactions.create(
+#         model="gemini-3.5-flash",
+#         input=prompt
+#     )
+
+#     return response.output_text
+
 def explain_wrong_answer(
     db: Session,
     attempt_id: int,
     question_id: int,
     user: mo.User
-) -> str:
+) -> sma.WrongAnswerExplanation:
 
     # Get the quiz attempt belonging to the logged-in user
     attempt = (
@@ -541,74 +692,415 @@ def explain_wrong_answer(
             detail="Correct option not found."
         )
 
-    # Get all options for the question
-    options = (
-        db.query(mo.QuestionOption)
-        .filter(
-            mo.QuestionOption.question_id == question.id
-        )
-        .all()
-    )
-
-    options_text = "\n".join(
-        f"{option.label}. {option.option_text}"
-        for option in options
-    )
-
     # Build the prompt for Gemini
+    #
+    # IMPORTANT:
+    # We are NOT sending all the question options.
+    # Gemini only receives:
+    # - the full question
+    # - the student's selected answer
+    # - the correct answer
     prompt = f"""
-        You are an educational tutor helping a WASSCE student understand
-        a question they answered incorrectly.
+You are an educational tutor helping a WASSCE student
+understand a question they answered incorrectly.
 
-        Question:
-        {question.question_text}
+Question:
+{question.question_text}
 
-        Options:
-        {options_text}
+Student's selected answer:
+{selected_option.label}. {selected_option.option_text}
 
-        Student's selected answer:
-        {selected_option.label}. {selected_option.option_text}
+Correct answer:
+{correct_option.label}. {correct_option.option_text}
 
-        Correct answer:
-        {correct_option.label}. {correct_option.option_text}
+Your task is to analyze the student's mistake and teach
+the underlying concept.
 
-        Your job is to teach the student, not simply give them the answer.
+Return ONLY valid JSON.
 
-        Requirements:
-        - Clearly explain why the correct answer is correct.
-        - Explain why the student's selected answer is incorrect.
-        - Teach the underlying concept behind the question.
-        - If calculations are involved, show the calculation step by step.
-        - Use language appropriate for a senior high school student.
-        - Be clear, patient, and encouraging.
-        - Do not assume the student already understands the concept.
-        - Do not be unnecessarily verbose.
-        - Do not simply repeat the answer.
-    """
+The JSON must have exactly these fields:
 
-    # Send the question to Gemini
+{{
+    "topic": "A concise academic topic name",
+    "concept": "The main concept the student needs to understand",
+    "why_student_answer_is_wrong": "Explain clearly why the student's selected answer is incorrect",
+    "why_correct_answer_is_right": "Explain clearly why the correct answer is correct",
+    "solution": "Give a step-by-step solution where applicable",
+    "key_takeaway": "A short and useful lesson the student should remember"
+}}
+
+Requirements:
+
+- The topic must be a concise, standard academic topic.
+- Do not return multiple topics.
+- Do not simply repeat the correct answer.
+- Explain the reasoning behind the answer.
+- Explain why the student's answer is wrong.
+- Teach the underlying concept.
+- If calculations are involved, show them step by step.
+- Use language appropriate for a senior high school student.
+- Be clear, patient, and encouraging.
+- Do not be unnecessarily verbose.
+- Do not include Markdown.
+- Return ONLY the JSON object.
+"""
+
+    # Ask Gemini to generate the explanation
     response = gemini_client.interactions.create(
         model="gemini-3.5-flash",
         input=prompt
     )
 
-    return response.output_text
+    # Get Gemini's text response
+    ai_text = response.output_text
 
-# if __name__ == "__main__":
-#     explanation = explain_question(
-#         question=(
-#             "An electric bulb is rated 120 W and 240 V. "
-#             "Determine the current it draws from the mains."
-#         ),
-#         options=[
-#             "A. 0.5 A",
-#             "B. 0.6 A",
-#             "C. 1.0 A",
-#             "D. 2.0 A"
-#         ],
-#         student_answer="B. 0.6 A",
-#         correct_answer="A. 0.5 A"
-#     )
+    # Convert Gemini's JSON string into a Python dictionary
+    try:
+        ai_data = json.loads(ai_text)
 
-#     print("\n--- GEMINI EXPLANATION ---\n")
-#     print(explanation)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=500,
+            detail="AI returned an invalid structured response."
+        )
+
+    # Validate Gemini's response using Pydantic
+    try:
+        ai_explanation = sma.AIWrongAnswerExplanation.model_validate(ai_data)
+
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="AI returned an unexpected response structure."
+        )
+
+    # Combine our trusted database information
+    # with Gemini's educational explanation.
+    return sma.WrongAnswerExplanation(
+        question_id=question.id,
+        question_text=question.question_text,
+
+        student_answer=sma.AnswerInfo(
+            label=selected_option.label,
+            text=selected_option.option_text
+        ),
+
+        correct_answer=sma.AnswerInfo(
+            label=correct_option.label,
+            text=correct_option.option_text
+        ),
+
+        topic=ai_explanation.topic,
+        concept=ai_explanation.concept,
+        why_student_answer_is_wrong=(
+            ai_explanation.why_student_answer_is_wrong
+        ),
+        why_correct_answer_is_right=(
+            ai_explanation.why_correct_answer_is_right
+        ),
+        solution=ai_explanation.solution,
+        key_takeaway=ai_explanation.key_takeaway
+    )
+
+
+
+
+
+
+def get_user_name(db: Session, user_id: int) -> str:
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise ValueError("User not found")
+
+    return user.name
+
+
+
+def calculate_current_streak(db: Session, user_id: int) -> int:
+    attempt_dates = (
+        db.query(mo.QuizAttempt.created_at)
+        .filter(mo.QuizAttempt.user_id == user_id)
+        .order_by(mo.QuizAttempt.created_at.desc())
+        .all()
+    )
+
+    if not attempt_dates:
+        return 0
+
+    # Get unique dates on which the user attempted a quiz
+    activity_dates = {
+        attempt_date[0].date()
+        for attempt_date in attempt_dates
+    }
+
+    today = date.today()
+
+    # If the user has activity today, start from today.
+    # Otherwise, start from yesterday.
+    if today in activity_dates:
+        current_date = today
+    else:
+        current_date = today - timedelta(days=1)
+
+    streak = 0
+
+    while current_date in activity_dates:
+        streak += 1
+        current_date -= timedelta(days=1)
+
+    return streak
+
+
+def calculate_average_score(db: Session, user_id: int) -> float:
+    percentages = (
+        db.query(mo.QuizAttempt.percentage)
+        .filter(mo.QuizAttempt.user_id == user_id)
+        .all()
+    )
+
+    if not percentages:
+        return 0.0
+
+    total_score = sum(percentage[0] for percentage in percentages)
+
+    return round(total_score / len(percentages), 2)
+
+
+def calculate_accuracy(db: Session, user_id: int) -> float:
+    attempts = (
+        db.query(
+            mo.QuizAttempt.correct_answers,
+            mo.QuizAttempt.total_questions
+        )
+        .filter(mo.QuizAttempt.user_id == user_id)
+        .all()
+    )
+
+    if not attempts:
+        return 0.0
+
+    total_correct = sum(attempt[0] for attempt in attempts)
+    total_questions = sum(attempt[1] for attempt in attempts)
+
+    if total_questions == 0:
+        return 0.0
+
+    accuracy = (total_correct / total_questions) * 100
+
+    return round(accuracy, 2)
+
+
+def calculate_total_questions(db: Session, user_id: int) -> int:
+    attempts = (
+        db.query(mo.QuizAttempt.total_questions)
+        .filter(mo.QuizAttempt.user_id == user_id)
+        .all()
+    )
+
+    if not attempts:
+        return 0
+
+    return sum(attempt[0] for attempt in attempts)
+
+
+def calculate_total_duration():
+    ...
+
+
+def calculate_subject_mastery(
+    db: Session,
+    user_id: int
+) -> list[sma.SubjectMastery]:
+
+    results = (
+        db.query(
+            mo.Subject.name,
+            func.count(mo.StudentAnswer.id).label("total_questions"),
+            func.sum(
+                case(
+                    (mo.StudentAnswer.is_correct == True, 1),
+                    else_=0
+                )
+            ).label("correct_answers")
+        )
+        .join(mo.Paper, mo.Paper.subject_id == mo.Subject.id)
+        .join(mo.Question, mo.Question.paper_id == mo.Paper.id)
+        .join(mo.StudentAnswer, mo.StudentAnswer.question_id == mo.Question.id)
+        .filter(mo.StudentAnswer.user_id == user_id)
+        .group_by(mo.Subject.id, mo.Subject.name)
+        .all()
+    )
+
+    mastery = []
+
+    for subject_name, total_questions, correct_answers in results:
+
+        mastery_percentage = (
+            (correct_answers / total_questions) * 100
+            if total_questions > 0
+            else 0.0
+        )
+
+        mastery.append(
+            sma.SubjectMastery(
+                subject_name=subject_name,
+                mastery_percentage=round(mastery_percentage, 2),
+                strongest_topic=None
+            )
+        )
+
+    return mastery
+
+
+def get_areas_to_improve(
+    subject_mastery: list[sma.SubjectMastery],
+    threshold: float = 60.0
+) -> list[sma.SubjectImprovement]:
+
+    areas_to_improve = []
+
+    for subject in subject_mastery:
+        if subject.mastery_percentage < threshold:
+            areas_to_improve.append(
+                sma.SubjectImprovement(
+                    subject_name=subject.subject_name,
+                    mastery_percentage=subject.mastery_percentage
+                )
+            )
+
+    return areas_to_improve
+
+def get_unfinished_quizzes():
+    ...
+
+
+def get_monthly_activity(
+    db: Session,
+    user_id: int,
+    year: int,
+    month: int
+) -> sma.MonthlyActivity:
+
+    start_date = date(year, month, 1)
+
+    last_day = monthrange(year, month)[1]
+    end_date = date(year, month, last_day)
+
+    results = (
+        db.query(
+            func.date(mo.QuizAttempt.created_at).label("activity_date"),
+            func.count(mo.QuizAttempt.id).label("quiz_count")
+        )
+        .filter(
+            mo.QuizAttempt.user_id == user_id,
+            mo.QuizAttempt.created_at >= start_date,
+            mo.QuizAttempt.created_at < end_date
+        )
+        .group_by(func.date(mo.QuizAttempt.created_at))
+        .order_by(func.date(mo.QuizAttempt.created_at))
+        .all()
+    )
+
+    activity_counts = {
+        activity_date: quiz_count
+        for activity_date, quiz_count in results
+    }
+
+    days = []
+
+    for day in range(1, last_day + 1):
+        activity_date = date(year, month, day)
+
+        days.append(
+            sma.ActivityDay(
+                date=activity_date,
+                quiz_count=activity_counts.get(activity_date, 0)
+            )
+        )
+
+    return sma.MonthlyActivity(
+        year=year,
+        month=month,
+        days=days
+    )
+
+
+def get_dashboard(
+    db: Session,
+    user_id: int,
+    year: int,
+    month: int
+) -> sma.UserDashboardResponse:
+
+    # User
+    user_name = get_user_name(
+        db,
+        user_id
+    )
+
+    # Overview
+    current_streak = calculate_current_streak(
+        db,
+        user_id
+    )
+
+    average_score = calculate_average_score(
+        db,
+        user_id
+    )
+
+    accuracy = calculate_accuracy(
+        db,
+        user_id
+    )
+
+    total_questions = calculate_total_questions(
+        db,
+        user_id
+    )
+
+    # Not implemented yet
+    total_duration = None
+    unfinished_quizzes = []
+
+    # Subject performance
+    subject_mastery = calculate_subject_mastery(
+        db,
+        user_id
+    )
+
+    areas_to_improve = get_areas_to_improve(
+        subject_mastery
+    )
+
+    # Monthly activity
+    monthly_activity = get_monthly_activity(
+        db,
+        user_id,
+        year,
+        month
+    )
+
+    # Assemble the final dashboard response
+    return sma.UserDashboardResponse(
+        user=sma.DashboardUser(
+            name=user_name
+        ),
+
+        overview=sma.DashboardOverview(
+            current_streak=current_streak,
+            average_score=average_score,
+            accuracy=accuracy,
+            total_questions_solved=total_questions,
+            total_duration_minutes=total_duration
+        ),
+
+        subject_mastery=subject_mastery,
+
+        areas_to_improve=areas_to_improve,
+
+        unfinished_quizzes=unfinished_quizzes,
+
+        monthly_activity=monthly_activity
+    )

@@ -48,17 +48,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
 def explain_wrong_answer(
     payload: sma.ExplainWrongAnswerRequest,
     db: Session = Depends(get_db),
-    current_user= Depends(sv.get_current_user)
+    current_user = Depends(sv.get_current_user)
 ):
-    explanation = sv.explain_wrong_answer(
+    return sv.explain_wrong_answer(
         db=db,
         attempt_id=payload.attempt_id,
         question_id=payload.question_id,
         user=current_user
-    )
-
-    return sma.ExplainWrongAnswerResponse(
-        explanation=explanation
     )
 
 #task for today 
@@ -97,14 +93,15 @@ def submit_questions(
     
 @app.get("/dashboard", response_model=sma.UserDashboardResponse)
 def dashboard(
-    user_id: int,
+    
     year: int,
     month: int,
+    current_user = Depends(sv.get_current_user),
     db: Session = Depends(get_db)
 ):
     return sv.get_dashboard(
         db=db,
-        user_id=user_id,
+        user_id=current_user.id,
         year=year,
         month=month
     )

@@ -43,7 +43,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
 
 @app.post(
     "/ai/explain",
-    response_model=sma.ExplainWrongAnswerResponse
+    response_model=sma.WrongAnswerExplanation
 )
 def explain_wrong_answer(
     payload: sma.ExplainWrongAnswerRequest,
